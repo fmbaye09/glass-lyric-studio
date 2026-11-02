@@ -116,3 +116,4 @@ Ouvrez ensuite l'URL affichée dans le terminal (par défaut `http://localhost:5
 - **Web Audio API** (`AudioContext`, `AnalyserNode`, `MediaStreamAudioDestinationNode`)
 - **MediaRecorder API** (Capture vidéo Full HD 12 Mbps avec flux audio synchronisé)
 - **Tailwind CSS v4** & **Lucide React Icons**
+

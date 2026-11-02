@@ -1,18 +1,33 @@
 // Presets, Fonts, Flags, and Lyric Parsing Utilities for GlassLyric Studio
 
+// Helper to detect Arabic script characters (including extended Arabic & presentation forms)
+export function hasArabicScript(text = '') {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(
+    String(text)
+  );
+}
+
+// Helper to strip zero-width Arabic combining diacritics (Tashkeel/Harakat) when counting visual characters
+export function stripArabicDiacritics(text = '') {
+  return String(text).replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
+}
+
 export const LYRIC_FONTS = [
-  { id: 'Caveat Brush', name: 'Caveat Brush (Pinceau Original)', family: '"Caveat Brush", cursive', weight: '400', style: 'normal' },
-  { id: 'Kaushan Script', name: 'Kaushan Script (Calligraphie Pinceau)', family: '"Kaushan Script", cursive', weight: '400', style: 'normal' },
-  { id: 'Amiri', name: 'Amiri (Khassida / Calligraphie & Serif)', family: '"Amiri", serif', weight: '700', style: 'normal' },
-  { id: 'Playfair Display', name: 'Playfair Display (Prestige & Khassida)', family: '"Playfair Display", serif', weight: '700', style: 'italic' },
-  { id: 'Cinzel', name: 'Cinzel (Gravure Royale Or)', family: '"Cinzel", serif', weight: '700', style: 'normal' },
-  { id: 'Permanent Marker', name: 'Permanent Marker (Feutre Épais)', family: '"Permanent Marker", cursive', weight: '400', style: 'normal' },
-  { id: 'Satisfy', name: 'Satisfy (Cursive Douce)', family: '"Satisfy", cursive', weight: '400', style: 'normal' },
-  { id: 'Courgette', name: 'Courgette (Brush Arrondi)', family: '"Courgette", cursive', weight: '400', style: 'normal' },
-  { id: 'Pacifico', name: 'Pacifico (Rétro Brush)', family: '"Pacifico", cursive', weight: '400', style: 'normal' },
-  { id: 'Dancing Script', name: 'Dancing Script (Élégant)', family: '"Dancing Script", cursive', weight: '700', style: 'normal' },
-  { id: 'Montserrat Italic', name: 'Montserrat Black Italic (Moderne)', family: '"Montserrat", sans-serif', weight: '900', style: 'italic' },
-  { id: 'Poppins Bold', name: 'Poppins ExtraBold (Clean Pop)', family: '"Poppins", sans-serif', weight: '800', style: 'normal' },
+  { id: 'Caveat Brush', name: 'Caveat Brush (Pinceau Original)', family: '"Caveat Brush", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Kaushan Script', name: 'Kaushan Script (Calligraphie Pinceau)', family: '"Kaushan Script", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Amiri', name: 'Amiri (Calligraphie Arabe Naskh & Khassida)', family: '"Amiri", serif', weight: '700', style: 'normal', isArabicReady: true },
+  { id: 'Scheherazade New', name: 'Scheherazade (Arabe Coranique & Harakat)', family: '"Scheherazade New", "Amiri", serif', weight: '700', style: 'normal', isArabicReady: true },
+  { id: 'Aref Ruqaa', name: 'Aref Ruqaa (Calligraphie Arabe Diwani/Ruqaa)', family: '"Aref Ruqaa", "Amiri", serif', weight: '700', style: 'normal', isArabicReady: true },
+  { id: 'Reem Kufi', name: 'Reem Kufi (Arabe Kufi Royal Moderne)', family: '"Reem Kufi", "Amiri", sans-serif', weight: '700', style: 'normal', isArabicReady: true },
+  { id: 'Playfair Display', name: 'Playfair Display (Prestige & Khassida)', family: '"Playfair Display", "Amiri", serif', weight: '700', style: 'italic' },
+  { id: 'Cinzel', name: 'Cinzel (Gravure Royale Or)', family: '"Cinzel", "Amiri", serif', weight: '700', style: 'normal' },
+  { id: 'Permanent Marker', name: 'Permanent Marker (Feutre Épais)', family: '"Permanent Marker", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Satisfy', name: 'Satisfy (Cursive Douce)', family: '"Satisfy", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Courgette', name: 'Courgette (Brush Arrondi)', family: '"Courgette", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Pacifico', name: 'Pacifico (Rétro Brush)', family: '"Pacifico", "Amiri", cursive', weight: '400', style: 'normal' },
+  { id: 'Dancing Script', name: 'Dancing Script (Élégant)', family: '"Dancing Script", "Amiri", cursive', weight: '700', style: 'normal' },
+  { id: 'Montserrat Italic', name: 'Montserrat Black Italic (Moderne)', family: '"Montserrat", "Amiri", sans-serif', weight: '900', style: 'italic' },
+  { id: 'Poppins Bold', name: 'Poppins ExtraBold (Clean Pop)', family: '"Poppins", "Amiri", sans-serif', weight: '800', style: 'normal' },
 ];
 
 export const NEUMORPHIC_PALETTES = [
@@ -123,46 +138,46 @@ export const KHASSIDA_SAMPLE_LYRICS = [
     id: 'khassida-1',
     startTime: 0.0,
     endTime: 5.0,
-    text: 'بِسْمِ اللَّهِ *الرَّحْمَٰنِ* الرَّحِيمِ\nBismillāhi *r-Raḥmāni* r-Raḥīm',
+    text: 'بِسْمِ اللَّهِ *الرَّحْمَٰنِ* الرَّحِيمِ',
   },
   {
     id: 'khassida-2',
     startTime: 5.0,
     endTime: 10.0,
-    text: '*Matlaboul Fawzeyni*\nJërëjëfë *Borom Touba*',
+    text: 'مَطْلَبُ *الْفَوْزَيْنِ*',
   },
   {
     id: 'khassida-3',
     startTime: 10.0,
     endTime: 15.0,
-    text: 'Wa kāna *ḥaqqan* ʿalaynā\n*naṣru* l-muʾminīna',
+    text: 'وَكَانَ *حَقًّا* عَلَيْنَا نَصْرُ *الْمُؤْمِنِينَ*',
   },
   {
     id: 'khassida-4',
     startTime: 15.0,
     endTime: 20.0,
-    text: 'Yaa *Cheikh Ahmadou Bamba*\nKhadimou *Rassoul* 🕌',
+    text: 'يَا شَيْخَ أَحْمَدُ *بَمْبَا* خَادِمَ *الرَّسُولِ*',
   },
   {
     id: 'khassida-5',
     startTime: 20.0,
     endTime: 25.0,
-    text: 'Alḥamdulillāhi *Rabbi* l-ʿālamīn\n*Touba* Darou Salam ✨',
+    text: 'الْحَمْدُ لِلَّهِ *رَبِّ* الْعَالَمِينَ',
   },
   {
     id: 'khassida-6',
     startTime: 25.0,
     endTime: 30.0,
-    text: 'Ṣallā l-Lāhu ʿalā *Muḥammadin*\nWa ʿalā *ālihi* wa ṣaḥbihi',
+    text: 'صَلَّى اللَّهُ عَلَىٰ *مُحَمَّدٍ* وَعَلَىٰ آلِهِ وَصَحْبِهِ وَسَلَّمَ',
   },
 ];
 
 export const SIGNATURE_FONTS = [
-  { id: 'Great Vibes', name: 'Great Vibes (Signature Royale)', family: '"Great Vibes", cursive' },
-  { id: 'Sacramento', name: 'Sacramento (Manuscrit Fin)', family: '"Sacramento", cursive' },
-  { id: 'Allura', name: 'Allura (Calligraphie Fluide)', family: '"Allura", cursive' },
-  { id: 'Dancing Script', name: 'Dancing Script (Vif)', family: '"Dancing Script", cursive' },
-  { id: 'Kaushan Script', name: 'Kaushan Script (Pinceau)', family: '"Kaushan Script", cursive' },
+  { id: 'Great Vibes', name: 'Great Vibes (Signature Royale)', family: '"Great Vibes", "Aref Ruqaa", "Amiri", cursive' },
+  { id: 'Sacramento', name: 'Sacramento (Manuscrit Fin)', family: '"Sacramento", "Aref Ruqaa", "Amiri", cursive' },
+  { id: 'Allura', name: 'Allura (Calligraphie Fluide)', family: '"Allura", "Aref Ruqaa", "Amiri", cursive' },
+  { id: 'Dancing Script', name: 'Dancing Script (Vif)', family: '"Dancing Script", "Aref Ruqaa", "Amiri", cursive' },
+  { id: 'Kaushan Script', name: 'Kaushan Script (Pinceau)', family: '"Kaushan Script", "Aref Ruqaa", "Amiri", cursive' },
 ];
 
 export const COUNTRY_FLAGS = [
@@ -346,6 +361,7 @@ export const STYLE_PRESETS = {
       tiktokShares: '24.7K',
       visualTheme: 'glassmorphism',
       showIslamicOrnaments: false,
+      singleLinePerCard: false,
     },
   },
 
@@ -431,6 +447,7 @@ export const STYLE_PRESETS = {
       tiktokShares: '24.7K',
       visualTheme: 'glassmorphism',
       showIslamicOrnaments: false,
+      singleLinePerCard: false,
     },
   },
 
@@ -503,6 +520,7 @@ export const STYLE_PRESETS = {
       tiktokShares: '24.7K',
       visualTheme: 'glassmorphism',
       showIslamicOrnaments: false,
+      singleLinePerCard: false,
     },
   },
 
@@ -513,6 +531,7 @@ export const STYLE_PRESETS = {
     config: {
       // Visual Engine Theme
       visualTheme: 'neumorphism', // 'glassmorphism' | 'neumorphism'
+      singleLinePerCard: true, // 1 ligne de sous-titre = 1 carte (sans retour à la ligne forcé)
       neumorphicPalette: 'touba-emerald', // 'touba-emerald' | 'sacred-ivory' | 'obsidian-gold' | 'pearl-emerald'
       neumorphicRelief: 1.0,
       neumorphicInsetFrame: true,
@@ -599,11 +618,16 @@ export const STYLE_PRESETS = {
 };
 
 /**
- * Parse LRC or SRT file content into our lyrics array format
+ * Parse LRC, SRT, or TXT file content into our lyrics array format.
+ * When `options.oneLinePerCard` is true (default for Khassida / Arabic), each subtitle line creates its own card.
  */
-export function parseLyricsFile(content, filename = '') {
+export function parseLyricsFile(content, filename = '', options = {}) {
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const parsed = [];
+  const oneLinePerCard =
+    options.oneLinePerCard !== undefined
+      ? Boolean(options.oneLinePerCard)
+      : hasArabicScript(content);
 
   if (filename.toLowerCase().endsWith('.srt') || content.includes('-->')) {
     // Parse SRT format
@@ -613,7 +637,8 @@ export function parseLyricsFile(content, filename = '') {
       if (line.includes('-->')) {
         const [startStr, endStr] = line.split('-->').map((s) => s.trim());
         const startTime = parseSrtTime(startStr);
-        const endTime = parseSrtTime(endStr);
+        const rawEnd = parseSrtTime(endStr);
+        const endTime = rawEnd > startTime ? rawEnd : startTime + 4;
         i++;
         const textLines = [];
         while (i < lines.length && lines[i].trim() !== '') {
@@ -621,12 +646,24 @@ export function parseLyricsFile(content, filename = '') {
           i++;
         }
         if (textLines.length > 0) {
-          parsed.push({
-            id: `lyric-${Date.now()}-${parsed.length}`,
-            startTime,
-            endTime: endTime > startTime ? endTime : startTime + 4,
-            text: textLines.join('\n'),
-          });
+          if (oneLinePerCard && textLines.length > 1) {
+            const subDur = (endTime - startTime) / textLines.length;
+            textLines.forEach((singleLine, subIdx) => {
+              parsed.push({
+                id: `lyric-${Date.now()}-${parsed.length}`,
+                startTime: Number((startTime + subIdx * subDur).toFixed(2)),
+                endTime: Number((startTime + (subIdx + 1) * subDur).toFixed(2)),
+                text: singleLine,
+              });
+            });
+          } else {
+            parsed.push({
+              id: `lyric-${Date.now()}-${parsed.length}`,
+              startTime: Number(startTime.toFixed(2)),
+              endTime: Number(endTime.toFixed(2)),
+              text: oneLinePerCard ? textLines.join(' ') : textLines.join('\n'),
+            });
+          }
         }
       } else {
         i++;
@@ -645,21 +682,54 @@ export function parseLyricsFile(content, filename = '') {
       const secs = parseInt(match[2], 10);
       const ms = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0;
       const time = mins * 60 + secs + ms / 1000;
-      const text = match[4].trim().replace(/\s*\|\s*/g, '\n');
-      if (text) {
-        rawEntries.push({ startTime: time, text });
+      const rawText = match[4].trim();
+      if (rawText) {
+        if (oneLinePerCard) {
+          const segments = rawText
+            .split(/\s*\|\s*/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          segments.forEach((seg, segIdx) => {
+            rawEntries.push({ startTime: time + segIdx * 0.01, text: seg, isSubSegment: segIdx > 0 });
+          });
+        } else {
+          rawEntries.push({ startTime: time, text: rawText.replace(/\s*\|\s*/g, '\n') });
+        }
       }
     }
   }
 
-  for (let i = 0; i < rawEntries.length; i++) {
-    const current = rawEntries[i];
-    const next = rawEntries[i + 1];
-    parsed.push({
-      id: `lyric-${Date.now()}-${i}`,
-      startTime: Number(current.startTime.toFixed(2)),
-      endTime: next ? Number(next.startTime.toFixed(2)) : Number((current.startTime + 4.5).toFixed(2)),
-      text: current.text,
+  if (rawEntries.length > 0) {
+    for (let i = 0; i < rawEntries.length; i++) {
+      const current = rawEntries[i];
+      const next = rawEntries[i + 1];
+      parsed.push({
+        id: `lyric-${Date.now()}-${i}`,
+        startTime: Number(current.startTime.toFixed(2)),
+        endTime: next
+          ? Number(Math.max(current.startTime + 0.5, next.startTime).toFixed(2))
+          : Number((current.startTime + 4.5).toFixed(2)),
+        text: current.text,
+      });
+    }
+    return parsed;
+  }
+
+  // Fallback for plain .TXT files (without timestamps): 1 non-empty line = 1 card!
+  const plainLines = lines
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('[ar:') && !l.startsWith('[ti:') && !l.startsWith('[by:'));
+
+  if (plainLines.length > 0) {
+    const totalDur = Math.max(15, Number(options.totalDuration) || 30);
+    const step = totalDur / plainLines.length;
+    plainLines.forEach((lineText, idx) => {
+      parsed.push({
+        id: `lyric-${Date.now()}-${idx}`,
+        startTime: Number((idx * step).toFixed(2)),
+        endTime: Number(((idx + 1) * step).toFixed(2)),
+        text: lineText,
+      });
     });
   }
 

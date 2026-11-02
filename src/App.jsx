@@ -41,6 +41,8 @@ import {
   KHASSIDA_SAMPLE_LYRICS,
   parseLyricsFile,
   exportToLRC,
+  hasArabicScript,
+  stripArabicDiacritics,
 } from './presets/defaultPresets';
 import { createDemoAudioBlob, StudioAudioController } from './utils/audioEngine';
 import {
@@ -114,6 +116,38 @@ export default function App() {
     setConfig((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  // Helper: Split any multi-line cards so that 1 non-empty line = 1 independent card
+  const splitLyricsOneLinePerCard = useCallback((cardsArray) => {
+    const result = [];
+    cardsArray.forEach((card) => {
+      const lines = String(card.text || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length <= 1) {
+        result.push({
+          ...card,
+          text: lines[0] || String(card.text || '').replace(/\n/g, ' ').trim(),
+        });
+      } else {
+        const start = Number(card.startTime) || 0;
+        const end = Math.max(start + 1, Number(card.endTime) || start + 4);
+        const subDur = (end - start) / lines.length;
+        lines.forEach((lineText, idx) => {
+          result.push({
+            ...card,
+            id: idx === 0 ? card.id : `lyric-${Date.now()}-${result.length}-${idx}`,
+            startTime: Number((start + idx * subDur).toFixed(2)),
+            endTime: Number((start + (idx + 1) * subDur).toFixed(2)),
+            text: lineText,
+          });
+        });
+      }
+    });
+    return result;
+  }, []);
+
   // Apply one of the complete visual presets (Style 1, Style 2, Style 3, or Khassida Neumorphism)
   const applyPreset = (presetKey) => {
     const preset = STYLE_PRESETS[presetKey];
@@ -132,9 +166,11 @@ export default function App() {
         element: null,
         theme: 'touba-neumorphic',
       });
-      if (lyrics[0]?.id === 'lyric-1') {
+      if (lyrics[0]?.id === 'line-1' || lyrics[0]?.id === 'lyric-1') {
         setLyrics(KHASSIDA_SAMPLE_LYRICS);
         setSelectedLyricId(KHASSIDA_SAMPLE_LYRICS[0].id);
+      } else {
+        setLyrics((prev) => splitLyricsOneLinePerCard(prev));
       }
     } else if (lyrics[0]?.id === 'khassida-1') {
       setLyrics(DEFAULT_LYRICS);
@@ -520,7 +556,47 @@ export default function App() {
   };
 
   // Lyrics Management Functions
+  const isSingleLineCardMode = Boolean(
+    config.singleLinePerCard ||
+      config.visualTheme === 'neumorphism' ||
+      activePresetId === 'khassida'
+  );
+
   const updateLyricItem = (id, field, value) => {
+    // In Khassida / 1-line-per-card mode, if user pastes multiple lines into a card,
+    // automatically split each line into its own separate card!
+    if (field === 'text' && isSingleLineCardMode && String(value).includes('\n')) {
+      const nonEmptyLines = String(value)
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (nonEmptyLines.length > 1) {
+        setLyrics((prev) => {
+          const idx = prev.findIndex((item) => item.id === id);
+          if (idx === -1) return prev;
+          const target = prev[idx];
+          const start = Number(target.startTime) || 0;
+          const end = Math.max(start + 1.5, Number(target.endTime) || start + 4.5);
+          const subDur = (end - start) / nonEmptyLines.length;
+          const newCards = nonEmptyLines.map((lineText, lineIdx) => ({
+            ...target,
+            id: lineIdx === 0 ? target.id : `lyric-${Date.now()}-${lineIdx}`,
+            startTime: Number((start + lineIdx * subDur).toFixed(2)),
+            endTime: Number((start + (lineIdx + 1) * subDur).toFixed(2)),
+            text: lineText,
+          }));
+          const next = [...prev];
+          next.splice(idx, 1, ...newCards);
+          return next;
+        });
+        return;
+      }
+
+      // If user simply pressed Enter at the end of a single line, strip the newline
+      value = String(value).replace(/\n/g, ' ');
+    }
+
     setLyrics((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
@@ -540,7 +616,9 @@ export default function App() {
       id: `lyric-${Date.now()}`,
       startTime: start,
       endTime: end,
-      text: 'Nouvelle phrase,\n*mot en or*\nici...',
+      text: isSingleLineCardMode
+        ? 'بِسْمِ اللَّهِ *الرَّحْمَٰنِ* الرَّحِيمِ'
+        : 'Nouvelle phrase,\n*mot en or*\nici...',
     };
     setLyrics((prev) => [...prev, newCard]);
     setSelectedLyricId(newCard.id);
@@ -557,14 +635,18 @@ export default function App() {
         id: `lyric-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         startTime: start,
         endTime: Math.max(start + 0.8, end),
-        text: customText || 'Nouveau couplet,\n*dafa nekk ci*\nSénégal...',
+        text:
+          customText ||
+          (isSingleLineCardMode
+            ? 'بِسْمِ اللَّهِ *الرَّحْمَٰنِ* الرَّحِيمِ'
+            : 'Nouveau couplet,\n*dafa nekk ci*\nSénégal...'),
       };
       setLyrics((prev) =>
         [...prev, newCard].sort((a, b) => a.startTime - b.startTime)
       );
       setSelectedLyricId(newCard.id);
     },
-    [duration]
+    [duration, isSingleLineCardMode]
   );
 
   const duplicateLyricCard = (item) => {
@@ -752,14 +834,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isTapSyncActive, triggerTapSyncStep]);
 
-  // Import .LRC / .SRT File
+  // Import .LRC / .SRT / .TXT File
   const handleImportLyricsFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const content = String(ev.target?.result || '');
-      const parsed = parseLyricsFile(content, file.name);
+      const parsed = parseLyricsFile(content, file.name, {
+        oneLinePerCard: isSingleLineCardMode || hasArabicScript(content),
+        totalDuration: duration || 30,
+      });
       if (parsed.length > 0) {
         setLyrics(parsed);
         setSelectedLyricId(parsed[0].id);
@@ -784,6 +869,7 @@ export default function App() {
   };
 
   // Helper: Format a long single-line or multi-line string into balanced lines (~22-28 chars per line)
+  // Ignores zero-width Arabic diacritics (Tashkeel / Harakat) so vocalized Arabic verses aren't broken prematurely.
   const autoWrapTextString = (str, maxCharsPerLine = 24) => {
     const paragraphs = str
       .split('\n')
@@ -792,8 +878,10 @@ export default function App() {
     const resultLines = [];
 
     for (const para of paragraphs) {
-      const cleanLen = para.replace(/\*/g, '').length;
-      if (cleanLen <= maxCharsPerLine) {
+      const isParaArabic = hasArabicScript(para);
+      const effectiveMaxChars = isParaArabic ? Math.max(maxCharsPerLine, 30) : maxCharsPerLine;
+      const cleanLen = stripArabicDiacritics(para.replace(/\*/g, '')).length;
+      if (cleanLen <= effectiveMaxChars) {
         resultLines.push(para);
         continue;
       }
@@ -802,8 +890,8 @@ export default function App() {
       let currentLen = 0;
 
       for (const word of words) {
-        const wLen = word.replace(/\*/g, '').length;
-        if (currentLine.length > 0 && currentLen + 1 + wLen > maxCharsPerLine) {
+        const wLen = stripArabicDiacritics(word.replace(/\*/g, '')).length;
+        if (currentLine.length > 0 && currentLen + 1 + wLen > effectiveMaxChars) {
           resultLines.push(currentLine.join(' '));
           currentLine = [word];
           currentLen = wLen;
@@ -819,8 +907,18 @@ export default function App() {
     return resultLines.join('\n');
   };
 
-  // Auto-format all lyric cards to have clean multi-line breaks
+  // Convert all existing cards so 1 line = 1 card (with no forced line breaks)
+  const handleSplitAllCardsOneLine = () => {
+    setLyrics((prev) => splitLyricsOneLinePerCard(prev));
+  };
+
+  // Auto-format all lyric cards: in Khassida / single-line mode, splits 1 line = 1 card;
+  // in multi-line song mode, wraps long lines into balanced couplets.
   const handleAutoFormatAllCards = () => {
+    if (isSingleLineCardMode) {
+      setLyrics((prev) => splitLyricsOneLinePerCard(prev));
+      return;
+    }
     setLyrics((prev) =>
       prev.map((item) => ({
         ...item,
@@ -829,19 +927,53 @@ export default function App() {
     );
   };
 
-  // Bulk Paste Text -> Split into Lyric Cards automatically & format lines to fit card
-  const handleApplyBulkLyrics = () => {
+  // Bulk Paste Text -> Split into Lyric Cards
+  // When mode === 'one-line' (or automatically in Khassida / Arabic mode): 1 non-empty line = 1 card!
+  const handleApplyBulkLyrics = (mode = 'auto') => {
     if (!bulkLyricsText.trim()) {
       setShowBulkModal(false);
       return;
     }
+
+    const useOneLinePerCard =
+      mode === 'one-line' ||
+      (mode === 'auto' &&
+        (isSingleLineCardMode || hasArabicScript(bulkLyricsText)));
+
+    if (useOneLinePerCard) {
+      const lines = bulkLyricsText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length === 0) {
+        setShowBulkModal(false);
+        return;
+      }
+
+      const totalDur = Math.max(15, duration || 30);
+      const step = Number((totalDur / Math.max(1, lines.length)).toFixed(2));
+
+      const generated = lines.map((lineText, i) => ({
+        id: `lyric-${Date.now()}-${i}`,
+        startTime: Number((i * step).toFixed(2)),
+        endTime: Number(((i + 1) * step).toFixed(2)),
+        text: lineText,
+      }));
+
+      setLyrics(generated);
+      setSelectedLyricId(generated[0].id);
+      setShowBulkModal(false);
+      return;
+    }
+
     let blocks = bulkLyricsText
       .trim()
       .split(/\n\s*\n/)
       .map((b) => b.trim())
       .filter(Boolean);
 
-    // If user pasted many lines without blank lines between couplets, group every 2-3 lines into a card
+    // If user pasted many lines without blank lines between couplets, group every 2 lines into a card
     if (blocks.length === 1) {
       const allLines = blocks[0]
         .split('\n')
@@ -1496,16 +1628,32 @@ export default function App() {
                     )}
 
                     <button
-                      onClick={handleAutoFormatAllCards}
-                      className="px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-xs font-semibold text-sky-300 border border-sky-500/30 cursor-pointer flex items-center gap-1"
+                      onClick={handleSplitAllCardsOneLine}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-xs font-semibold text-emerald-300 border border-emerald-500/30 cursor-pointer flex items-center gap-1"
+                      title="Séparer chaque ligne en sa propre carte (1 ligne de sous-titre = 1 carte)"
                     >
-                      <Wand2 className="w-3.5 h-3.5" />
-                      Auto-Lignes
+                      <Layers className="w-3.5 h-3.5" />
+                      1 Ligne = 1 Carte
                     </button>
+
+                    {!isSingleLineCardMode && (
+                      <button
+                        onClick={handleAutoFormatAllCards}
+                        className="px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-xs font-semibold text-sky-300 border border-sky-500/30 cursor-pointer flex items-center gap-1"
+                        title="Découper les phrases longues en plusieurs lignes dans la même carte"
+                      >
+                        <Wand2 className="w-3.5 h-3.5" />
+                        Auto-Lignes
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
-                        setBulkLyricsText(lyrics.map((l) => l.text).join('\n\n'));
+                        setBulkLyricsText(
+                          lyrics
+                            .map((l) => l.text)
+                            .join(isSingleLineCardMode ? '\n' : '\n\n')
+                        );
                         setShowBulkModal(true);
                       }}
                       className="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 cursor-pointer"
@@ -1551,6 +1699,7 @@ export default function App() {
                     const isCurrent =
                       activeLyricObj?.id === item.id || selectedLyricId === item.id;
                     const { flatWords } = extractWordsWithHighlight(item.text || '');
+                    const cardHasArabic = hasArabicScript(item.text || '');
                     const cardUnderlineEnabled =
                       item.showUnderline !== undefined
                         ? item.showUnderline
@@ -1665,42 +1814,81 @@ export default function App() {
 
                         {/* MIDDLE TEXTAREA BOX */}
                         <textarea
-                          rows={2}
+                          rows={isSingleLineCardMode ? (cardHasArabic ? 2 : 1) : cardHasArabic ? 3 : 2}
+                          dir="auto"
                           value={item.text}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) =>
                             updateLyricItem(item.id, 'text', e.target.value)
                           }
-                          className="w-full p-3.5 rounded-xl bg-[#040711] border border-slate-800/90 focus:border-[#FACC15]/70 text-base text-white font-semibold outline-none resize-y leading-snug"
-                          placeholder="Saisissez les paroles du couplet..."
+                          style={
+                            cardHasArabic
+                              ? {
+                                  fontFamily:
+                                    '"Amiri", "Scheherazade New", "Plus Jakarta Sans", sans-serif',
+                                }
+                              : undefined
+                          }
+                          className={`w-full p-3.5 rounded-xl bg-[#040711] border border-slate-800/90 focus:border-[#FACC15]/70 text-white font-semibold outline-none resize-y ${
+                            cardHasArabic ? 'text-lg leading-relaxed' : 'text-base leading-snug'
+                          }`}
+                          placeholder={
+                            isSingleLineCardMode
+                              ? '1 ligne de sous-titre = 1 carte (collez plusieurs lignes pour créer plusieurs cartes)...'
+                              : 'Saisissez les paroles du couplet (Arabe, Wolof, Français...)'
+                          }
                         />
 
                         {/* BOTTOM INTERACTIVE WORD CHIPS BAR */}
                         <div className="pt-1 space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                            <Sparkles className="w-3.5 h-3.5 text-[#FACC15]" />
-                            <span>Cliquez sur les mots à colorer en jaune pinceau :</span>
+                          <div className="flex items-center justify-between gap-1.5 text-xs text-slate-400">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-[#FACC15]" />
+                              <span>Cliquez sur les mots à colorer en jaune pinceau :</span>
+                            </div>
+                            {cardHasArabic && (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-semibold text-emerald-300">
+                                Texte Arabe RTL détecté 🕌
+                              </span>
+                            )}
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div
+                            dir={cardHasArabic ? 'rtl' : 'ltr'}
+                            className="flex flex-wrap items-center gap-2"
+                          >
                             {flatWords.length > 0 ? (
-                              flatWords.map((wObj) => (
-                                <button
-                                  key={wObj.globalIndex}
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleWordHighlightInCard(item, wObj.globalIndex);
-                                  }}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                    wObj.highlighted
-                                      ? 'bg-[#FACC15] hover:bg-amber-300 text-slate-950 shadow-md shadow-amber-400/20'
-                                      : 'bg-[#121a2d] hover:bg-[#1a2540] text-slate-200 border border-slate-700/80'
-                                  }`}
-                                >
-                                  {wObj.word}
-                                </button>
-                              ))
+                              flatWords.map((wObj) => {
+                                const wordIsArabic = hasArabicScript(wObj.word);
+                                return (
+                                  <button
+                                    key={wObj.globalIndex}
+                                    type="button"
+                                    dir={wordIsArabic ? 'rtl' : 'ltr'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleWordHighlightInCard(item, wObj.globalIndex);
+                                    }}
+                                    style={
+                                      wordIsArabic
+                                        ? {
+                                            fontFamily:
+                                              '"Amiri", "Scheherazade New", serif',
+                                          }
+                                        : undefined
+                                    }
+                                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                                      wordIsArabic ? 'text-base leading-relaxed' : 'text-xs'
+                                    } ${
+                                      wObj.highlighted
+                                        ? 'bg-[#FACC15] hover:bg-amber-300 text-slate-950 shadow-md shadow-amber-400/20'
+                                        : 'bg-[#121a2d] hover:bg-[#1a2540] text-slate-200 border border-slate-700/80'
+                                    }`}
+                                  >
+                                    {wObj.word}
+                                  </button>
+                                );
+                              })
                             ) : (
                               <span className="text-xs text-slate-500 italic">
                                 Aucun mot saisi...
@@ -2247,6 +2435,7 @@ export default function App() {
                         }`}
                       >
                         <div
+                          dir={f.isArabicReady ? 'rtl' : 'ltr'}
                           className="text-xl truncate mb-1 text-white"
                           style={{
                             fontFamily: f.family,
@@ -2254,9 +2443,16 @@ export default function App() {
                             fontStyle: f.style,
                           }}
                         >
-                          Boul Faalé Sénégal
+                          {f.isArabicReady ? 'بِسْمِ اللَّهِ • Touba' : 'Boul Faalé Sénégal'}
                         </div>
-                        <div className="text-[11px] text-slate-400">{f.name}</div>
+                        <div className="flex items-center justify-between gap-1 text-[11px] text-slate-400">
+                          <span className="truncate">{f.name}</span>
+                          {f.isArabicReady && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[9px] font-bold shrink-0">
+                              Arabe RTL
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -2606,16 +2802,20 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Séparez chaque carte par une <strong>ligne vide</strong>. Utilisez <code className="text-amber-300">*mot*</code> pour mettre des mots en Jaune Or.
+              Pour les <strong>Khassidas & sous-titres</strong> : <strong>chaque ligne = 1 carte</strong> (affichée sur une seule ligne sans retour à la ligne forcé). Utilisez <code className="text-amber-300">*mot*</code> pour mettre des mots en Or.
             </p>
             <textarea
               rows={10}
+              dir="auto"
               value={bulkLyricsText}
               onChange={(e) => setBulkLyricsText(e.target.value)}
-              className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-amber-400"
-              placeholder={'Boul Faalé,\n*dafa nekk ci*\nSénégal...\n\n*Dafa* nekk ci\nSénégal...'}
+              style={{
+                fontFamily: '"Amiri", "Scheherazade New", "Plus Jakarta Sans", sans-serif',
+              }}
+              className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-base leading-relaxed text-white outline-none focus:border-amber-400"
+              placeholder={'بِسْمِ اللَّهِ *الرَّحْمَٰنِ* الرَّحِيمِ\nمَطْلَبُ *الْفَوْزَيْنِ*\nوَكَانَ *حَقًّا* عَلَيْنَا نَصْرُ *الْمُؤْمِنِينَ*'}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button
                 onClick={() => setShowBulkModal(false)}
                 className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300 cursor-pointer"
@@ -2623,10 +2823,16 @@ export default function App() {
                 Annuler
               </button>
               <button
-                onClick={handleApplyBulkLyrics}
-                className="px-5 py-2 rounded-xl bg-amber-400 text-slate-950 text-xs font-bold cursor-pointer"
+                onClick={() => handleApplyBulkLyrics('couplets')}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
               >
-                Découper en Cartes Automatiquement
+                Découper par couplets (Lignes vides)
+              </button>
+              <button
+                onClick={() => handleApplyBulkLyrics('one-line')}
+                className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold cursor-pointer shadow-lg shadow-amber-400/20"
+              >
+                🕌 Découper : 1 Ligne = 1 Carte
               </button>
             </div>
           </div>

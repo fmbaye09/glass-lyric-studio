@@ -4,6 +4,7 @@ import {
   LYRIC_FONTS,
   SIGNATURE_FONTS,
   NEUMORPHIC_PALETTES,
+  hasArabicScript,
 } from '../presets/defaultPresets';
 
 export const CANVAS_WIDTH = 1080;
@@ -1191,7 +1192,7 @@ export class GlassLyricRenderer {
       // Artist Name + Verified Badge
       const textX = avX + avSize + 24;
       ctx.save();
-      ctx.font = '700 35px "Plus Jakarta Sans", sans-serif';
+      ctx.font = '700 35px "Plus Jakarta Sans", "Amiri", sans-serif';
       ctx.fillStyle = headerTitleColor;
       if (!isNeumorphic) {
         ctx.shadowColor = 'rgba(0,0,0,0.4)';
@@ -1205,7 +1206,7 @@ export class GlassLyricRenderer {
       }
 
       // Song Title below
-      ctx.font = '500 31px "Plus Jakarta Sans", sans-serif';
+      ctx.font = '500 31px "Plus Jakarta Sans", "Amiri", sans-serif';
       ctx.fillStyle = headerSubColor;
       ctx.fillText(config.songTitle || 'Boul Faalé', textX, pillY + 112);
       ctx.restore();
@@ -1259,7 +1260,7 @@ export class GlassLyricRenderer {
     // Artist Name + Verified Badge
     const textX = avX + avSize + 24;
     ctx.save();
-    ctx.font = '700 37px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '700 37px "Plus Jakarta Sans", "Amiri", sans-serif';
     ctx.fillStyle = headerTitleColor;
     if (!isNeumorphic) {
       ctx.shadowColor = 'rgba(0,0,0,0.4)';
@@ -1273,7 +1274,7 @@ export class GlassLyricRenderer {
     }
 
     // Song Title
-    ctx.font = '400 32px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '400 32px "Plus Jakarta Sans", "Amiri", sans-serif';
     ctx.fillStyle = headerSubColor;
     ctx.fillText(config.songTitle || 'Boul Faalé', textX, pillY + 106);
 
@@ -1286,7 +1287,7 @@ export class GlassLyricRenderer {
       ctx.fillRect(eqX + i * 5.2, eqY - eh, 3.2, eh);
     });
 
-    ctx.font = '500 24px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '500 24px "Plus Jakarta Sans", "Amiri", sans-serif';
     ctx.fillStyle = headerTitleColor;
     ctx.fillText(config.songSubtitle || 'Musique Sénégalaise 🇸🇳', eqX + 34, eqY - 2);
 
@@ -1600,7 +1601,8 @@ export class GlassLyricRenderer {
       if (config.khassidaHeaderCalligraphy) {
         ctx.save();
         const headerY = cardY + 66;
-        ctx.font = '700 42px "Amiri", serif';
+        ctx.direction = hasArabicScript(config.khassidaHeaderCalligraphy) ? 'rtl' : 'ltr';
+        ctx.font = '700 44px "Amiri", "Scheherazade New", serif';
         ctx.fillStyle = pal.accentGold;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1608,7 +1610,7 @@ export class GlassLyricRenderer {
 
         // Ornamental Side Lines around the Basmala / Calligraphy
         const calW = Math.min(340, ctx.measureText(config.khassidaHeaderCalligraphy).width + 44);
-        ctx.strokeStyle = pal.borderBevel;
+        ctx.strokeStyle = pal.ornamentStroke || pal.borderBevel;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(CANVAS_WIDTH / 2 - calW / 2 - 110, headerY);
@@ -1630,13 +1632,17 @@ export class GlassLyricRenderer {
       this.drawBrushHeart(ctx, cardX + cardW - 95, cardY + 68, 44, config.highlightColor);
     }
 
-    // 4. Render Active Lyrics with Auto-Wrap, Auto-Fit & Inline Highlight (*word*)
+    // 4. Render Active Lyrics with Auto-Wrap, Auto-Fit, RTL Arabic Shaping & Inline Highlight (*word*)
     const rawText = (activeLyric?.text || '').trim();
     if (!rawText) return;
 
     const fontObj = LYRIC_FONTS.find((f) => f.id === config.fontFamily) || LYRIC_FONTS[0];
     const baseFontSize = config.fontSize || 98;
-    const lineHeightRatio = config.lineHeight || 1.18;
+    const coupletHasArabic = hasArabicScript(rawText);
+    // Give Arabic vocalized lines (Harakat / Tashkeel) generous vertical breathing room
+    const lineHeightRatio = coupletHasArabic
+      ? Math.max(config.lineHeight || 1.18, 1.34)
+      : config.lineHeight || 1.18;
 
     const cardShowUnderline =
       activeLyric?.showUnderline !== undefined
@@ -1657,18 +1663,34 @@ export class GlassLyricRenderer {
     // Tokenize paragraphs into words while preserving *...* highlight state across lines
     const tokenizedParagraphs = this.tokenizeLyricsIntoParagraphs(rawText);
 
-    // Auto-fit loop: find the largest fontSize <= baseFontSize where all wrapped lines fit width & height
+    // For Khassidas / Arabic verses or single-line subtitle cards: keep each line on 1 single line
+    // without forced wrapping by scaling the font size to fit the card width.
+    const preferSingleLinePerParagraph = Boolean(
+      config.singleLinePerCard ||
+        config.visualTheme === 'neumorphism' ||
+        coupletHasArabic ||
+        tokenizedParagraphs.length === 1
+    );
+
+    // Auto-fit loop: find the largest fontSize <= baseFontSize where all lines fit width & height
     let effectiveFontSize = baseFontSize;
-    const minFontSize = 36;
+    const minFontSize = 26;
     let wrappedLines = [];
     let lineHeightPx = effectiveFontSize * lineHeightRatio;
 
     while (effectiveFontSize >= minFontSize) {
-      const fontSpec = `${fontObj.style || 'normal'} ${fontObj.weight || '400'} ${effectiveFontSize}px ${fontObj.family}`;
-      ctx.font = fontSpec;
       lineHeightPx = effectiveFontSize * lineHeightRatio;
+      const forceSingleLineNow =
+        preferSingleLinePerParagraph && effectiveFontSize > minFontSize;
 
-      wrappedLines = this.wrapParagraphsToLines(ctx, tokenizedParagraphs, maxTextWidth);
+      wrappedLines = this.wrapParagraphsToLines(
+        ctx,
+        tokenizedParagraphs,
+        maxTextWidth,
+        fontObj,
+        effectiveFontSize,
+        forceSingleLineNow
+      );
 
       const totalH = wrappedLines.length * lineHeightPx;
       const widestLine = wrappedLines.reduce((maxW, line) => Math.max(maxW, line.width), 0);
@@ -1679,7 +1701,7 @@ export class GlassLyricRenderer {
       ) {
         break;
       }
-      effectiveFontSize -= 3;
+      effectiveFontSize -= 2;
     }
 
     if (wrappedLines.length === 0) return;
@@ -1733,70 +1755,103 @@ export class GlassLyricRenderer {
       cardY + cardH / 2 + verticalCenterOffset + animOffsetY
     );
     ctx.scale(animScale, animScale);
-
-    const finalFontSpec = `${fontObj.style || 'normal'} ${fontObj.weight || '400'} ${effectiveFontSize}px ${fontObj.family}`;
-    ctx.font = finalFontSpec;
     ctx.textBaseline = 'middle';
 
     const startY = -totalTextH / 2 + lineHeightPx / 2;
-    const spaceWidth = ctx.measureText(' ').width;
+
+    // Ensure high contrast on light Neumorphic palettes even if config.textColor was previously white
+    const baseTextCol =
+      isNeumorphic &&
+      pal?.isLight &&
+      (config.textColor === '#FFFFFF' || config.textColor === '#F8FAFC')
+        ? pal.textColor
+        : config.textColor;
+    const hiTextCol =
+      isNeumorphic && pal?.isLight && config.highlightColor === '#FACC15'
+        ? pal.accentGold
+        : config.highlightColor;
+
+    const drawStyledRun = (text, x, y, color) => {
+      // 1. Deep Soft Drop Shadow on Glass or Soft-UI Emboss on Light Neumorphism
+      if (config.textShadowIntensity > 0) {
+        ctx.save();
+        if (isNeumorphic && pal?.isLight) {
+          ctx.shadowColor = pal.shadowDark;
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetX = 3;
+          ctx.shadowOffsetY = 3;
+        } else {
+          ctx.shadowColor = `rgba(0, 0, 0, ${0.75 * config.textShadowIntensity})`;
+          ctx.shadowBlur = 18;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 8;
+        }
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      }
+
+      // 2. Optional Subtle 3D Bevel / Extrusion
+      if (config.textBevelEffect) {
+        ctx.fillStyle =
+          isNeumorphic && pal?.isLight ? pal.shadowLight : 'rgba(15, 23, 42, 0.45)';
+        ctx.fillText(text, x - 2.5, y - 2.5);
+      }
+
+      // 3. Main Crisp Glyph Fill
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    };
 
     wrappedLines.forEach((lineObj, lineIdx) => {
       const ly = startY + lineIdx * lineHeightPx;
-      let cursorX = -lineObj.width / 2;
+      const isRtl = Boolean(lineObj.isRtl);
 
-      lineObj.words.forEach((wordSegs, wIdx) => {
-        wordSegs.forEach((seg) => {
-          // Ensure high contrast on light Neumorphic palettes even if config.textColor was previously white
-          const baseTextCol =
-            isNeumorphic &&
-            pal?.isLight &&
-            (config.textColor === '#FFFFFF' || config.textColor === '#F8FAFC')
-              ? pal.textColor
-              : config.textColor;
-          const hiTextCol =
-            isNeumorphic && pal?.isLight && config.highlightColor === '#FACC15'
-              ? pal.accentGold
-              : config.highlightColor;
-          const color = seg.highlighted ? hiTextCol : baseTextCol;
+      ctx.save();
+      ctx.font = this.getFontSpecForLine(fontObj, effectiveFontSize, isRtl);
+      const spaceWidth = ctx.measureText(' ').width;
 
-          // Deep Soft Drop Shadow for readability on glass, or Soft-UI Emboss on light Neumorphism
-          if (config.textShadowIntensity > 0) {
-            ctx.save();
-            if (isNeumorphic && pal?.isLight) {
-              ctx.shadowColor = pal.shadowDark;
-              ctx.shadowBlur = 8;
-              ctx.shadowOffsetX = 3;
-              ctx.shadowOffsetY = 3;
-            } else {
-              ctx.shadowColor = `rgba(0, 0, 0, ${0.75 * config.textShadowIntensity})`;
-              ctx.shadowBlur = 18;
-              ctx.shadowOffsetX = 0;
-              ctx.shadowOffsetY = 8;
-            }
-            ctx.fillStyle = color;
-            ctx.fillText(seg.text, cursorX, ly);
-            ctx.restore();
-          }
+      if (isRtl) {
+        // RIGHT-TO-LEFT (RTL) ARABIC RENDERING:
+        // Group adjacent words that share the same highlight state into contiguous runs
+        // so HarfBuzz shapes Arabic words, ligatures (اللَّهِ) and harakat naturally,
+        // and place word/run 0 on the FAR RIGHT advancing to the LEFT!
+        ctx.direction = 'rtl';
+        ctx.textAlign = 'center';
 
-          // Optional Subtle 3D Bevel / Extrusion (like "Sénégal..." in Image 1)
-          if (config.textBevelEffect) {
-            ctx.fillStyle =
-              isNeumorphic && pal?.isLight ? pal.shadowLight : 'rgba(15, 23, 42, 0.45)';
-            ctx.fillText(seg.text, cursorX - 2.5, ly - 2.5);
-          }
+        const runs = this.buildContiguousRuns(ctx, lineObj.words);
+        const totalRunsWidth =
+          runs.reduce((acc, r) => acc + r.width, 0) +
+          Math.max(0, runs.length - 1) * spaceWidth;
 
-          // Main Crisp Glyph Fill
-          ctx.fillStyle = color;
-          ctx.fillText(seg.text, cursorX, ly);
+        let rightEdgeX = totalRunsWidth / 2;
 
-          cursorX += seg.width;
+        runs.forEach((run) => {
+          const runCenterX = rightEdgeX - run.width / 2;
+          const color = run.highlighted ? hiTextCol : baseTextCol;
+          drawStyledRun(run.text, runCenterX, ly, color);
+          rightEdgeX -= run.width + spaceWidth;
         });
+      } else {
+        // LEFT-TO-RIGHT (LTR) LATIN / WOLOF / FRENCH RENDERING:
+        ctx.direction = 'ltr';
+        ctx.textAlign = 'left';
 
-        if (wIdx < lineObj.words.length - 1) {
-          cursorX += spaceWidth;
-        }
-      });
+        let cursorX = -lineObj.width / 2;
+        lineObj.words.forEach((wordSegs, wIdx) => {
+          wordSegs.forEach((seg) => {
+            const color = seg.highlighted ? hiTextCol : baseTextCol;
+            drawStyledRun(seg.text, cursorX, ly, color);
+            cursorX += seg.width;
+          });
+
+          if (wIdx < lineObj.words.length - 1) {
+            cursorX += spaceWidth;
+          }
+        });
+      }
+
+      ctx.restore();
     });
 
     // 5. Hand-Drawn Yellow Brush Underline Stroke beneath the Lyrics
@@ -1810,7 +1865,7 @@ export class GlassLyricRenderer {
         0,
         underlineY,
         underlineW,
-        config.underlineColor || config.highlightColor
+        config.underlineColor || hiTextCol
       );
     }
 
@@ -1818,8 +1873,60 @@ export class GlassLyricRenderer {
   }
 
   /**
+   * Returns the CSS font specification for a line, automatically selecting a rich
+   * Arabic calligraphy font ("Amiri" / "Scheherazade New" / "Aref Ruqaa" / "Reem Kufi")
+   * with a slight optical size boost when the line contains Arabic script.
+   */
+  getFontSpecForLine(fontObj, fontSize, isRtl = false) {
+    if (isRtl) {
+      const arabicSize = Math.round(fontSize * 1.06);
+      if (fontObj?.isArabicReady) {
+        return `normal ${fontObj.weight || '700'} ${arabicSize}px ${fontObj.family}`;
+      }
+      return `normal 700 ${arabicSize}px "Amiri", "Scheherazade New", serif`;
+    }
+    return `${fontObj?.style || 'normal'} ${fontObj?.weight || '400'} ${fontSize}px ${fontObj?.family || 'sans-serif'}`;
+  }
+
+  /**
+   * Groups adjacent words with identical highlight state into contiguous shaped text runs.
+   * Essential for Arabic RTL lines so multi-word phrases and ligatures shape seamlessly.
+   */
+  buildContiguousRuns(ctx, lineWords) {
+    const runs = [];
+    let currentWords = [];
+    let currentHighlight = null;
+
+    const flushRun = () => {
+      if (currentWords.length > 0) {
+        const text = currentWords.join(' ');
+        runs.push({
+          text,
+          highlighted: Boolean(currentHighlight),
+          width: ctx.measureText(text).width,
+        });
+        currentWords = [];
+      }
+    };
+
+    for (const wordSegs of lineWords) {
+      const wordText = wordSegs.map((s) => s.text).join('');
+      const wordHi = wordSegs.some((s) => s.highlighted);
+      if (currentHighlight !== null && wordHi !== currentHighlight) {
+        flushRun();
+      }
+      currentHighlight = wordHi;
+      currentWords.push(wordText);
+    }
+    flushRun();
+
+    return runs;
+  }
+
+  /**
    * Tokenizes multi-line text into paragraphs of words while preserving `*...*` highlight state
    * even when `*...*` spans across multiple words or lines.
+   * For Arabic words, keeps the entire word as a single segment so cursive letter joining is never broken.
    */
   tokenizeLyricsIntoParagraphs(rawText) {
     const rawParagraphs = rawText.split('\n');
@@ -1844,7 +1951,14 @@ export class GlassLyricRenderer {
       const flushWord = () => {
         flushSeg();
         if (currentWordSegs.length > 0) {
-          words.push(currentWordSegs);
+          const combinedWord = currentWordSegs.map((s) => s.text).join('');
+          if (hasArabicScript(combinedWord)) {
+            // Never split a single Arabic word into disconnected cursive segments
+            const anyHighlighted = currentWordSegs.some((s) => s.highlighted);
+            words.push([{ text: combinedWord, highlighted: anyHighlighted }]);
+          } else {
+            words.push(currentWordSegs);
+          }
           currentWordSegs = [];
         }
       };
@@ -1872,10 +1986,17 @@ export class GlassLyricRenderer {
 
   /**
    * Wraps tokenized paragraphs into balanced visual lines that fit within `maxWidth`.
-   * Also breaks any single ultra-long word if it exceeds `maxWidth`.
+   * When `forceSingleLinePerParagraph` is true, keeps each paragraph on a single unbroken line
+   * so the caller's auto-fit loop scales the font size instead of forcing a line break.
    */
-  wrapParagraphsToLines(ctx, paragraphs, maxWidth) {
-    const spaceWidth = ctx.measureText(' ').width;
+  wrapParagraphsToLines(
+    ctx,
+    paragraphs,
+    maxWidth,
+    fontObj,
+    effectiveFontSize,
+    forceSingleLinePerParagraph = false
+  ) {
     const allLines = [];
 
     const measureWord = (wordSegs) => {
@@ -1889,14 +2010,20 @@ export class GlassLyricRenderer {
     };
 
     for (const paraWords of paragraphs) {
-      // Measure all words in this paragraph, splitting any single word that is wider than maxWidth
+      const isRtl = paraWords.some((w) => w.some((s) => hasArabicScript(s.text)));
+      ctx.font = this.getFontSpecForLine(fontObj, effectiveFontSize, isRtl);
+      ctx.direction = isRtl ? 'rtl' : 'ltr';
+      const spaceWidth = ctx.measureText(' ').width;
+
+      // Measure all words in this paragraph, splitting any single Latin word that is wider than maxWidth
+      // (Never split an Arabic word character-by-character so cursive joining & harakat stay intact)
       const measuredWords = [];
       for (const rawWordSegs of paraWords) {
         const mw = measureWord(rawWordSegs);
-        if (mw.width <= maxWidth) {
+        if (mw.width <= maxWidth || isRtl) {
           measuredWords.push(mw);
         } else {
-          // Break an abnormally long unbroken word character by character
+          // Break an abnormally long unbroken Latin word character by character
           let chunkSegs = [];
           let chunkW = 0;
           for (const seg of rawWordSegs) {
@@ -1940,15 +2067,16 @@ export class GlassLyricRenderer {
         measuredWords.reduce((acc, w) => acc + w.width, 0) +
         Math.max(0, measuredWords.length - 1) * spaceWidth;
 
-      if (totalParaWidth <= maxWidth) {
+      if (totalParaWidth <= maxWidth || forceSingleLinePerParagraph) {
         allLines.push({
           words: measuredWords.map((mw) => mw.segs),
           width: totalParaWidth,
+          isRtl,
         });
         continue;
       }
 
-      // Balanced multi-line wrapping so lines have harmonious widths inside the glass card
+      // Balanced multi-line wrapping so lines have harmonious widths inside the card
       const estimatedLineCount = Math.ceil(totalParaWidth / maxWidth);
       const targetLineWidth = Math.min(
         maxWidth,
@@ -1967,6 +2095,7 @@ export class GlassLyricRenderer {
           allLines.push({
             words: currentLineWords,
             width: currentLineWidth,
+            isRtl,
           });
           currentLineWords = [mw.segs];
           currentLineWidth = mw.width;
@@ -1975,10 +2104,10 @@ export class GlassLyricRenderer {
           nextWidth > targetLineWidth &&
           measuredWords.length - i >= 1
         ) {
-          // Check if breaking here keeps remaining words reasonable
           allLines.push({
             words: currentLineWords,
             width: currentLineWidth,
+            isRtl,
           });
           currentLineWords = [mw.segs];
           currentLineWidth = mw.width;
@@ -1992,10 +2121,12 @@ export class GlassLyricRenderer {
         allLines.push({
           words: currentLineWords,
           width: currentLineWidth,
+          isRtl,
         });
       }
     }
 
+    ctx.direction = 'ltr';
     return allLines;
   }
 
@@ -2563,7 +2694,7 @@ export class GlassLyricRenderer {
     // B. Bottom-Right Overlay: Glass / Neumorphic #Hashtag Pill (Image 1) OR TikTok Social Icons (Image 2)
     if (config.bottomRightMode === 'hashtag-pill' && config.hashtagText) {
       ctx.save();
-      ctx.font = '500 26px "Plus Jakarta Sans", sans-serif';
+      ctx.font = '500 26px "Plus Jakarta Sans", "Amiri", sans-serif';
       const textW = ctx.measureText(config.hashtagText).width;
       const pillW = textW + 62;
       const pillH = 74;
